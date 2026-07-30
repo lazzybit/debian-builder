@@ -5,33 +5,38 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  discover:
     runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.list.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          pkgs=$(for d in */; do [ -f "${d}build" ] && printf '"%s",' "${d%/}"; done | sed 's/,$//')
+          echo "packages=[$pkgs]" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: discover
+    if: needs.discover.outputs.packages != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.discover.outputs.packages) }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build all packages
-        run: |
-          built=0
-          for build_script in */build; do
-            pkg=$(dirname "$build_script")
-            echo "::group::$pkg"
-            bash "$build_script" && rc=$? || rc=$?
-            if [ "$rc" -ne 0 ]; then
-              echo "::error::$pkg: build failed (exit $rc)"
-              exit 1
-            fi
-            echo "::endgroup::"
-            built=1
-          done
-          if [ "$built" -eq 0 ]; then
-            echo 'No packages found.'
-          fi
+      - name: Read version
+        id: version
+        run: echo "value=$(cat ${{ matrix.package }}/VERSION)" >> "$GITHUB_OUTPUT"
 
-      - name: Upload artifacts
-        if: always()
+      - name: Build
+        run: bash "${{ matrix.package }}/build"
+
+      - name: Upload
         uses: actions/upload-artifact@v5
         with:
-          name: debs-${{ github.sha }}
-          path: '*/out.deb'
-          if-no-files-found: ignore
+          name: ${{ matrix.package }}-${{ steps.version.outputs.value }}.deb
+          path: '${{ matrix.package }}/out.deb'
+          if-no-files-found: error
