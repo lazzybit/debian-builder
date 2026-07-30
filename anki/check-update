@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# check-update - check if VERSION is the latest stable Anki release
+#
+# Exit codes:
+#   0 - already up to date
+#   1 - new version available (prints version on stdout)
+#   2 - runtime error (network, parse failure, etc.)
+#
+
+set -e
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+feed="https://github.com/ankitects/anki/releases.atom"
+current=$(cat "$DIR/VERSION")
+
+latest=$(curl -s "$feed" \
+    | grep '<title>' \
+    | sed 's/.*<title>//;s/<\/title>.*//' \
+    | grep -E '^[0-9]+\.[0-9]+(\.[0-9]+)?$' \
+    | head -1)
+
+if [ -z "$latest" ]; then
+    echo "Error: unable to determine latest version from feed" >&2
+    exit 2
+fi
+
+if [ "$current" = "$latest" ]; then
+    exit 0
+fi
+
+echo "$latest"
+exit 1

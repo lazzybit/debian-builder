@@ -1,0 +1,53 @@
+name: Build .deb
+
+on:
+  push:
+    paths:
+      - '*/VERSION'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed packages
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            before="${{ github.event.before }}"
+            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              git diff-tree --no-commit-id --name-only -r HEAD
+            else
+              git diff --name-only "$before" HEAD
+            fi | grep '/VERSION$' | sed 's|/VERSION||' > packages.txt || true
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            for d in */; do
+              [ -f "${d}build" ] && echo "${d%/}"
+            done > packages.txt
+          fi
+          echo "Packages to build:"
+          cat packages.txt
+
+      - name: Build packages
+        run: |
+          while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            echo "::group::$pkg"
+            bash "$pkg/build" 2>&1 && rc=$? || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::$pkg: build failed (exit $rc)"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done < packages.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: debs-${{ github.sha }}
+          path: '*/out.deb'
+          if-no-files-found: error

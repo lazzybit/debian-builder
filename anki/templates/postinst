@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+update-desktop-database -q /usr/share/applications 2>/dev/null || true
+update-mime-database /usr/share/mime 2>/dev/null || true
+xdg-mime default anki.desktop application/x-colpkg 2>/dev/null || true
+xdg-mime default anki.desktop application/x-apkg 2>/dev/null || true
+xdg-mime default anki.desktop application/x-ankiaddon 2>/dev/null || true
+xdg-mime default anki.desktop application/vnd.anki 2>/dev/null || true

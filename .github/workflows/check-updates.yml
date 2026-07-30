@@ -1,0 +1,49 @@
+name: Check for updates
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # daily at midnight UTC
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run check-update for each package
+        id: check
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          updated=0
+          for script in */check-update; do
+            pkg="$(dirname "$script")"
+            echo "::group::$pkg"
+
+            out=$(bash "$script" 2>&1) && rc=$? || rc=$?
+            case "$rc" in
+              0)
+                echo "$pkg: already up to date ($out)"
+                ;;
+              1)
+                new_version="$out"
+                echo "$pkg: new version $new_version"
+                printf '%s\n' "$new_version" > "$pkg/VERSION"
+                git add "$pkg/VERSION"
+                git commit -m "$pkg: update to $new_version"
+                updated=1
+                ;;
+              *)
+                echo "::warning::$pkg: check-update failed (exit $rc): $out"
+                ;;
+            esac
+
+            echo "::endgroup::"
+          done
+
+          if [ "$updated" -eq 1 ]; then
+            git push
+          fi

@@ -1,0 +1,63 @@
+#!/bin/sh
+#
+# build - download official Anki binary and repack into a .deb
+#
+# Reads VERSION from the script's own directory.
+# Output: ./out.deb (relative to the script's directory)
+# Prints "out.deb" on stdout on success.
+#
+
+set -e
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+version=$(cat "$DIR/VERSION")
+url="https://github.com/ankitects/anki/releases/download/$version/anki-$version-linux-x86_64.tar.zst"
+
+WORKDIR=$(mktemp -d /tmp/anki-deb.XXXXXX)
+trap 'rm -rf "$WORKDIR"' EXIT INT TERM
+
+echo "Downloading $url ..." >&2
+tarball="$WORKDIR/anki-$version.tar.zst"
+curl -L -o "$tarball" "$url"
+
+echo "Extracting ..." >&2
+mkdir -p "$WORKDIR/extracted"
+zstd -dc "$tarball" | tar -xf - -C "$WORKDIR/extracted"
+src=$(find "$WORKDIR/extracted" -type d -name 'anki-linux' | head -1)
+
+pkgdir="$WORKDIR/pkg"
+debdir="$pkgdir/DEBIAN"
+mkdir -p "$debdir"
+
+sed "s/@VERSION@/$version/" "$DIR/templates/control" > "$debdir/control"
+cp "$DIR/templates/postinst" "$debdir/postinst"
+cp "$DIR/templates/prerm"   "$debdir/prerm"
+chmod 755 "$debdir/postinst" "$debdir/prerm"
+
+mkdir -p "$pkgdir/usr/lib/anki"
+cp -a "$src/anki"          "$pkgdir/usr/lib/anki/"
+cp -a "$src/app"           "$pkgdir/usr/lib/anki/"
+cp -a "$src/app_packages"  "$pkgdir/usr/lib/anki/"
+cp -a "$src/python"        "$pkgdir/usr/lib/anki/"
+
+mkdir -p "$pkgdir/usr/bin"
+ln -sf ../lib/anki/anki "$pkgdir/usr/bin/anki"
+
+mkdir -p "$pkgdir/usr/share/applications"
+cp "$src/anki.desktop" "$pkgdir/usr/share/applications/anki.desktop"
+
+mkdir -p "$pkgdir/usr/share/pixmaps"
+cp "$src/anki.png" "$pkgdir/usr/share/pixmaps/anki.png"
+cp "$src/anki.xpm" "$pkgdir/usr/share/pixmaps/anki.xpm"
+
+mkdir -p "$pkgdir/usr/share/mime/packages"
+cp "$src/anki.xml" "$pkgdir/usr/share/mime/packages/anki.xml"
+
+mkdir -p "$pkgdir/usr/share/man/man1"
+cp "$src/anki.1" "$pkgdir/usr/share/man/man1/anki.1"
+
+debfile="$DIR/out.deb"
+
+echo "Building $debfile ..." >&2
+dpkg-deb --root-owner-group -Zgzip --build "$pkgdir" "$debfile"
+echo "out.deb"
