@@ -2,19 +2,69 @@ name: Build .deb
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - '*/VERSION'
+  workflow_run:
+    workflows:
+      - Check for updates
+    types:
+      - completed
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   discover:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       packages: ${{ steps.list.outputs.packages }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # workflow_run points at the pre-update SHA, so inspect the current branch tip.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.repository.default_branch || github.sha }}
+          fetch-depth: 0
+
       - id: list
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          pkgs=$(for d in */; do [ -f "${d}build" ] && printf '"%s",' "${d%/}"; done | sed 's/,$//')
-          echo "packages=[$pkgs]" >> "$GITHUB_OUTPUT"
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              package_names=$(for d in */; do
+                [ -f "${d}build" ] && printf '%s\n' "${d%/}"
+              done)
+              ;;
+            push)
+              if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+                changed_files=$(git diff-tree --no-commit-id --root --name-only -r "$GITHUB_SHA")
+              else
+                changed_files=$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA")
+              fi
+              package_names=$(printf '%s\n' "$changed_files" | awk -F/ '$2 == "VERSION" { print $1 }')
+              ;;
+            workflow_run)
+              changed_files=$(git diff --name-only "$WORKFLOW_HEAD_SHA" HEAD)
+              package_names=$(printf '%s\n' "$changed_files" | awk -F/ '$2 == "VERSION" { print $1 }')
+              ;;
+          esac
+
+          packages=$(printf '%s\n' "$package_names" |
+            sort -u |
+            while IFS= read -r pkg; do
+              if [ -n "$pkg" ] && [ -f "$pkg/build" ]; then
+                printf '%s\n' "$pkg"
+              fi
+            done |
+            jq -R -s -c 'split("\n") | map(select(length > 0))')
+
+          echo "Packages to build: $packages"
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
 
   build:
     needs: discover

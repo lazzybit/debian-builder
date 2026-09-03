@@ -52,9 +52,10 @@ The output file **must** be `./out.deb` relative to the package directory.
 
 ### `build-deb.yml`
 
-- **Triggers:** push to `main` when any `*/VERSION` changes + manual dispatch
+- **Triggers:** `*/VERSION` changes on `main`, successful completion of
+  `check-updates.yml`, or manual dispatch
 - Detects which packages have a changed `VERSION`, runs `build` for each,
-  and uploads all `out.deb` files as a single workflow artifact.
+  and uploads each `out.deb` as a workflow artifact.
 
 ## Adding a new package
 
