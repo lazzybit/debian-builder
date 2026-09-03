@@ -1,4 +1,4 @@
-# debianize
+# debian-builder
 
 Automated Debian package builder powered by GitHub Actions. Each package is a
 self-contained directory with its own version tracker, update checker, and
@@ -55,7 +55,7 @@ The output file **must** be `./out.deb` relative to the package directory.
 - **Triggers:** `*/VERSION` changes on `main`, successful completion of
   `check-updates.yml`, or manual dispatch
 - Detects which packages have a changed `VERSION`, runs `build` for each,
-  and uploads each `out.deb` as a workflow artifact.
+  and updates the `latest` GitHub Release with unversioned package assets.
 
 ## Adding a new package
 
